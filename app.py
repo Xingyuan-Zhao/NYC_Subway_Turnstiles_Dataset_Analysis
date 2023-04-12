@@ -32,7 +32,8 @@ def get_data_by_datetime(date, time):
 
 
 if __name__ == "__main__":
-    turnstile_file = "data/turnstile_230401.txt"
+    # turnstile_file = "data/turnstile_230401.txt"
+    turnstile_file = "data/turnstile.txt"
     station_file = "data/stations.csv"
     results = process_data(turnstile_file, station_file)
     with open("data.json", "w") as f:
