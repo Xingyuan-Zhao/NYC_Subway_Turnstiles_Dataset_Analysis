@@ -3,7 +3,7 @@ from data_processing import process_data
 import json
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
+# app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
 
 
 @app.route("/")
@@ -26,16 +26,17 @@ def get_data_by_datetime(date, time):
     print(time)
     with open("data.json", "r") as f:
         data = json.load(f)
-    filtered_data = [d for d in data if d["date"] == date and d["time"] == time]
+    filtered_data = {}
+    for key, value in data.items():
+        if value["date"] == date and value["time"] == time:
+            filtered_data[key] = value
     print("len(filtered_data)", len(filtered_data))
     return jsonify(filtered_data)
 
 
 if __name__ == "__main__":
-    # turnstile_file = "data/turnstile_230401.txt"
-    turnstile_file = "data/turnstile.txt"
+    turnstile_file = "data/turnstile_230401.txt"
+    # turnstile_file = "data/turnstile.txt"
     station_file = "data/stations.csv"
-    results = process_data(turnstile_file, station_file)
-    with open("data.json", "w") as f:
-        json.dump(results, f)
+    process_data(turnstile_file, station_file)
     app.run()
