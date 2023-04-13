@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import lag, col, sum, trim, to_date, date_format
+from pyspark.sql.functions import lag, col, sum, trim, to_date, date_format, desc, when
 import json
 
 
@@ -36,43 +36,87 @@ def process_data(turnstile_file_path, station_file_path):
         turnstile_df.DIVISION == manhattan_stations_df.division
     ])
 
+    # Replace the "time"
+    replaced_time_df = combined_df.withColumn("time", when(col("time") == "01:00:00", "00:00:00")
+                                              .when(col("time") == "05:00:00", "04:00:00")
+                                              .when(col("time") == "09:00:00", "08:00:00")
+                                              .when(col("time") == "13:00:00", "12:00:00")
+                                              .when(col("time") == "17:00:00", "16:00:00")
+                                              .when(col("time") == "21:00:00", "20:00:00")
+                                              .otherwise(col("time")))
+
+    # Filer out the unwanted rows
+    selected_time_df = replaced_time_df.filter(
+        col("time").isin(["00:00:00", "04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00"]))
+
     # Calculate the number of entrances and exits for each station at each date and time
-    window_spec = Window.partitionBy("manhattan_stations.station", "linename", "manhattan_stations.division", "scp").orderBy("date", "time")
-    selected_df = combined_df \
+    window_spec = Window.partitionBy("manhattan_stations.station", "linename", "manhattan_stations.division", "scp")\
+        .orderBy("date", "time")
+    selected_df = selected_time_df \
         .select(
             col("manhattan_stations.station").alias("station"),
             col("linename"),
             col("manhattan_stations.division").alias("division"),
+            # col("manhattan_stations.latitude").cast("float").alias("latitude"),
+            # col("manhattan_stations.longitude").cast("float").alias("longitude"),
             col("scp"),
             col("date"),
             col("time"),
             col("ENTRIES").cast("int"),
-            col("EXITS").cast("int").alias("exit"),
-            (col("ENTRIES") - lag("ENTRIES", 1).over(window_spec)).alias("enter_num"),
-            (col("EXITS") - lag("EXITS", 1).over(window_spec)).alias("exit_num")
+            col("EXITS").cast("int"),
+            (col("ENTRIES") - lag("ENTRIES", 1).over(window_spec)).cast("int").alias("enter_num"),
+            (col("EXITS") - lag("EXITS", 1).over(window_spec)).cast("int").alias("exit_num")
         )\
         .na.drop()  # drop the first line
 
-    aggregated_df = selected_df.groupBy("station", "linename", "division", "date", "time")\
-        .agg(sum("enter_num").cast("int").alias("enter"), sum("exit_num").cast("int").alias("exit"))\
-        .orderBy("station", "linename", "division", "date", "time")
+    # Add a column for the total number of people
+    selected_df = selected_df.withColumn("total_num", col("enter_num") + col("exit_num"))
 
-    # Reorder
-    aggregated_df = aggregated_df.select("station", "linename", "division", "enter", "exit", "date", "time")
-    aggregated_df.show()
-    print("aggregated_df.count()", aggregated_df.count())
+    aggregated_df = selected_df.groupBy("station", "linename", "division", "date", "time")\
+        .agg(
+            sum("enter_num").cast("int").alias("enter"),
+            sum("exit_num").cast("int").alias("exit"),
+            sum("total_num").cast("int").alias("total")
+        ) \
+        .orderBy(desc("total"))
+
+
+    # test_df = aggregated_df.filter(
+    #     (col("date") == "03-28-2023") &
+    #     (col("time") == "08:00:00")
+    # )
+    # test_df.show()
 
     # Get the number of stations
-    count_df = aggregated_df.groupBy("station", "linename", "division").count()
-    num_rows = count_df.count()
-    print("the number of stations: ", num_rows)
-
+    # count_df = aggregated_df.groupBy("station", "linename", "division").count()
+    # num_rows = count_df.count()
+    # print("the number of stations: ", num_rows)
+    #
     # print("orderBy(count, ascending=False).show()")
     # aggregated_df.groupBy("station", "linename", "division").count().orderBy("count", ascending=False).show()
 
-    results = aggregated_df \
-        .toJSON() \
-        .map(lambda x: json.loads(x)) \
-        .collect()
+    # Write data to a JSON file with a Key ID
+    results = {}
+    for i, row in enumerate(aggregated_df.collect()):
+        key = f"key{i}"
+        row_obj = {
+            "station": row["station"],
+            # "center": {
+            #     "lat": row["latitude"],
+            #     "lng": row["longitude"]
+            # },
+            "linename": row["linename"],
+            "division": row["division"],
+            "enter": row["enter"],
+            "exit": row["exit"],
+            "total": row["total"],
+            "date": row["date"],
+            "time": row["time"]
+        }
+        results[key] = row_obj
 
-    return results
+    with open("data.json", "w") as f:
+        json.dump(results, f)
+
+
+
