@@ -23,7 +23,7 @@ def process_data(turnstile_file_path, station_file_path):
         "EXITS                                                               ", "EXITS")
     turnstile_df = turnstile_df.withColumn("EXITS", trim(turnstile_df["EXITS"])) \
         .withColumn("date", date_format(to_date("date", "MM/dd/yyyy"), "MM-dd-yyyy"))
-    turnstile_df = turnstile_df.filter(col("DESC") == "REGULAR")
+    # turnstile_df = turnstile_df.filter(col("DESC") == "REGULAR")
 
     stations_df = load_data(station_file_path)
 
@@ -50,8 +50,9 @@ def process_data(turnstile_file_path, station_file_path):
     selected_time_df = replaced_time_df.filter(
         col("time").isin(["00:00:00", "04:00:00", "08:00:00", "12:00:00", "16:00:00", "20:00:00"]))
 
+
     # Calculate the number of entrances and exits for each station at each date and time
-    window_spec = Window.partitionBy("manhattan_stations.station", "linename", "manhattan_stations.division", "scp")\
+    window_spec = Window.partitionBy("manhattan_stations.station", "linename", "manhattan_stations.division", "C/A", "UNIT", "scp")\
         .orderBy("date", "time")
     selected_df = selected_time_df \
         .select(
@@ -60,6 +61,8 @@ def process_data(turnstile_file_path, station_file_path):
             col("manhattan_stations.division").alias("division"),
             col("manhattan_stations.Lat").cast("float").alias("latitude"),
             col("manhattan_stations.Long").cast("float").alias("longitude"),
+            col("C/A"),
+            col("UNIT"),
             col("scp"),
             col("date"),
             col("time"),
@@ -81,12 +84,18 @@ def process_data(turnstile_file_path, station_file_path):
         ) \
         .orderBy(desc("total"))
 
+    # Filter out incorrect data
+    # "INWOOD-207 ST": 05:00:01
+    # "BOWERY": missing 03/29/2023,12:00:00
+    # "96 ST" "linename:6" missing 03-29-2023,16:00:00
+    filtered_df = aggregated_df.filter(~col("station").isin("57 ST", "96 ST-2 AVE", "190 ST", "DELANCEY/ESSEX", "51 ST", "125 ST", "INWOOD-207 ST", "BOWERY"))
+    filtered_df = filtered_df.filter((col("station") != "96 ST") | (col("linename") != "6"))
 
-    test_df = aggregated_df.filter(
-        (col("date") == "03-28-2023") &
-        (col("time") == "08:00:00")
-    )
-    test_df.show()
+    # test_df = filtered_df.filter(
+    #     (col("date") == "03-28-2023") &
+    #     (col("time") == "08:00:00")
+    # )
+    # test_df.show()
 
     # Get the number of stations
     # count_df = aggregated_df.groupBy("station", "linename", "division").count()
@@ -98,7 +107,7 @@ def process_data(turnstile_file_path, station_file_path):
 
     # Write data to a JSON file with a Key ID
     results = {}
-    for i, row in enumerate(aggregated_df.collect()):
+    for i, row in enumerate(filtered_df.collect()):
         key = f"key{i}"
         row_obj = {
             "station": row["station"],
@@ -124,45 +133,52 @@ def process_data(turnstile_file_path, station_file_path):
     '''
     window_spec = Window.partitionBy("date", "time").orderBy(desc("total"))
 
-    ranked_df = aggregated_df \
+    ranked_df = filtered_df \
         .withColumn("rank", rank().over(window_spec)) \
         .filter(col("rank") <= 10)\
         .orderBy("rank")
 
     # test_df2 = ranked_df.filter(
-    #     (col("date") == "03-28-2023") &
-    #     (col("time") == "08:00:00")
+    #     (col("date") == "03-31-2023") &
+    #     (col("time") == "12:00:00")
     # )
     # test_df2.show()
 
-    stations_list = ranked_df.toJSON().map(lambda j: json.loads(j)).collect()
-    # stations_list = ranked_df.rdd.map(lambda row: {
-    #     "station": row["station"],
-    #     "center": {
-    #         "lat": row["latitude"],
-    #         "lng": row["longitude"]
-    #     },
-    #     "linename": row["linename"],
-    #     "division": row["division"],
-    #     "enter": row["enter"],
-    #     "exit": row["exit"],
-    #     "total": row["total"],
-    #     "date": row["date"],
-    #     "time": row["time"],
-    #     "rank": row["rank"]
-    # }).collect()
+    # stations_list = ranked_df.toJSON().map(lambda j: json.loads(j)).collect()
+    top10 = {}
+    for i, row in enumerate(ranked_df.collect()):
+        key = f"key{i}"
+        row_obj = {
+            "station": row["station"],
+            "center": {
+                "lat": row["latitude"],
+                "lng": row["longitude"]
+            },
+            "linename": row["linename"],
+            "division": row["division"],
+            "enter": row["enter"],
+            "exit": row["exit"],
+            "total": row["total"],
+            "date": row["date"],
+            "time": row["time"],
+            "rank": row["rank"]
+        }
+        top10[key] = row_obj
 
     with open("top10_stations.json", "w") as f:
-        json.dump(stations_list, f)
+        json.dump(top10, f)
 
     '''
         count the total number of people in all stations on each date
     '''
-    total_by_date = aggregated_df.groupBy("date").agg(sum("total").alias("total_by_date"))
-    total_by_date.show()
+    total_by_date = filtered_df.groupBy("date").agg(sum("total").alias("total_by_date")).orderBy("date")
+    # total_by_date.show()
+    total_by_date.write.format("csv").option("header", "true").mode("overwrite").save("total_by_date.csv")
+
 
     '''
         count the total number of people in all stations on each date and time
     '''
-    total_by_datetime = aggregated_df.groupBy("date", "time").agg(sum("total").alias("total"))
-    total_by_datetime.show()
+    total_by_datetime = filtered_df.groupBy("date", "time").agg(sum("total").alias("total_by_date_time")).orderBy("date", "time")
+    # total_by_datetime.show()
+    total_by_datetime.write.format("csv").option("header", "true").mode("overwrite").save("total_by_datetime.csv")

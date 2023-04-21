@@ -31,7 +31,9 @@ def get_data_by_datetime(date, time):
         if value["date"] == date and value["time"] == time:
             filtered_data[key] = value
     print("len(filtered_data)", len(filtered_data))
-    return jsonify(filtered_data)
+    response = jsonify(filtered_data)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
 
 
 @app.route("/top10/<date>/<time>", methods=["GET"])
@@ -41,11 +43,14 @@ def get_top10_by_datetime(date, time):
     print(time)
     with open("top10_stations.json", "r") as f:
         data = json.load(f)
-    filtered_data = []
-    for row in data:
-        if row["date"] == date and row["time"] == time:
-            filtered_data.append(row)
-    return jsonify(filtered_data)
+    filtered_data = {}
+    for key, value in data.items():
+        if value["date"] == date and value["time"] == time:
+            filtered_data[key] = value
+    print("len(filtered_data)", len(filtered_data))
+    response = jsonify(filtered_data)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
 
 
 if __name__ == "__main__":
