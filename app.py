@@ -34,9 +34,23 @@ def get_data_by_datetime(date, time):
     return jsonify(filtered_data)
 
 
+@app.route("/top10/<date>/<time>", methods=["GET"])
+def get_top10_by_datetime(date, time):
+    print("get_top10_by_datetime")
+    print(date)
+    print(time)
+    with open("top10_stations.json", "r") as f:
+        data = json.load(f)
+    filtered_data = []
+    for row in data:
+        if row["date"] == date and row["time"] == time:
+            filtered_data.append(row)
+    return jsonify(filtered_data)
+
+
 if __name__ == "__main__":
     turnstile_file = "data/turnstile_230401.txt"
     # turnstile_file = "data/turnstile.txt"
-    station_file = "data/stations.csv"
+    station_file = "data/NYSubway.csv"
     process_data(turnstile_file, station_file)
     app.run()

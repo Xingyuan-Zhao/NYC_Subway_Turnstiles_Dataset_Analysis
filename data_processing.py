@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import lag, col, sum, trim, to_date, date_format, desc, when
+from pyspark.sql.functions import lag, col, sum, trim, to_date, date_format, desc, when, rank
 import json
 
 
@@ -23,6 +23,7 @@ def process_data(turnstile_file_path, station_file_path):
         "EXITS                                                               ", "EXITS")
     turnstile_df = turnstile_df.withColumn("EXITS", trim(turnstile_df["EXITS"])) \
         .withColumn("date", date_format(to_date("date", "MM/dd/yyyy"), "MM-dd-yyyy"))
+    turnstile_df = turnstile_df.filter(col("DESC") == "REGULAR")
 
     stations_df = load_data(station_file_path)
 
@@ -57,8 +58,8 @@ def process_data(turnstile_file_path, station_file_path):
             col("manhattan_stations.station").alias("station"),
             col("linename"),
             col("manhattan_stations.division").alias("division"),
-            # col("manhattan_stations.latitude").cast("float").alias("latitude"),
-            # col("manhattan_stations.longitude").cast("float").alias("longitude"),
+            col("manhattan_stations.Lat").cast("float").alias("latitude"),
+            col("manhattan_stations.Long").cast("float").alias("longitude"),
             col("scp"),
             col("date"),
             col("time"),
@@ -72,7 +73,7 @@ def process_data(turnstile_file_path, station_file_path):
     # Add a column for the total number of people
     selected_df = selected_df.withColumn("total_num", col("enter_num") + col("exit_num"))
 
-    aggregated_df = selected_df.groupBy("station", "linename", "division", "date", "time")\
+    aggregated_df = selected_df.groupBy("station", "linename", "division", "date", "time", "latitude", "longitude")\
         .agg(
             sum("enter_num").cast("int").alias("enter"),
             sum("exit_num").cast("int").alias("exit"),
@@ -81,11 +82,11 @@ def process_data(turnstile_file_path, station_file_path):
         .orderBy(desc("total"))
 
 
-    # test_df = aggregated_df.filter(
-    #     (col("date") == "03-28-2023") &
-    #     (col("time") == "08:00:00")
-    # )
-    # test_df.show()
+    test_df = aggregated_df.filter(
+        (col("date") == "03-28-2023") &
+        (col("time") == "08:00:00")
+    )
+    test_df.show()
 
     # Get the number of stations
     # count_df = aggregated_df.groupBy("station", "linename", "division").count()
@@ -101,10 +102,10 @@ def process_data(turnstile_file_path, station_file_path):
         key = f"key{i}"
         row_obj = {
             "station": row["station"],
-            # "center": {
-            #     "lat": row["latitude"],
-            #     "lng": row["longitude"]
-            # },
+            "center": {
+                "lat": row["latitude"],
+                "lng": row["longitude"]
+            },
             "linename": row["linename"],
             "division": row["division"],
             "enter": row["enter"],
@@ -118,5 +119,50 @@ def process_data(turnstile_file_path, station_file_path):
     with open("data.json", "w") as f:
         json.dump(results, f)
 
+    '''
+     Find out the top 10 stations with the highest number of people on each date and time
+    '''
+    window_spec = Window.partitionBy("date", "time").orderBy(desc("total"))
 
+    ranked_df = aggregated_df \
+        .withColumn("rank", rank().over(window_spec)) \
+        .filter(col("rank") <= 10)\
+        .orderBy("rank")
 
+    # test_df2 = ranked_df.filter(
+    #     (col("date") == "03-28-2023") &
+    #     (col("time") == "08:00:00")
+    # )
+    # test_df2.show()
+
+    stations_list = ranked_df.toJSON().map(lambda j: json.loads(j)).collect()
+    # stations_list = ranked_df.rdd.map(lambda row: {
+    #     "station": row["station"],
+    #     "center": {
+    #         "lat": row["latitude"],
+    #         "lng": row["longitude"]
+    #     },
+    #     "linename": row["linename"],
+    #     "division": row["division"],
+    #     "enter": row["enter"],
+    #     "exit": row["exit"],
+    #     "total": row["total"],
+    #     "date": row["date"],
+    #     "time": row["time"],
+    #     "rank": row["rank"]
+    # }).collect()
+
+    with open("top10_stations.json", "w") as f:
+        json.dump(stations_list, f)
+
+    '''
+        count the total number of people in all stations on each date
+    '''
+    total_by_date = aggregated_df.groupBy("date").agg(sum("total").alias("total_by_date"))
+    total_by_date.show()
+
+    '''
+        count the total number of people in all stations on each date and time
+    '''
+    total_by_datetime = aggregated_df.groupBy("date", "time").agg(sum("total").alias("total"))
+    total_by_datetime.show()
