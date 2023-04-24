@@ -28,8 +28,9 @@ def get_data_by_datetime(date, time):
         data = json.load(f)
     filtered_data = {}
     for key, value in data.items():
-        if value["date"] == date and value["time"] == time:
-            filtered_data[key] = value
+        for row in value:
+            if row[key]["date"] == date and row[key]["time"] == time:
+                filtered_data[key] = row[key]
     print("len(filtered_data)", len(filtered_data))
     response = jsonify(filtered_data)
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -45,8 +46,9 @@ def get_top10_by_datetime(date, time):
         data = json.load(f)
     filtered_data = {}
     for key, value in data.items():
-        if value["date"] == date and value["time"] == time:
-            filtered_data[key] = value
+        for row in value:
+            if row[key]["date"] == date and row[key]["time"] == time:
+                filtered_data[key] = row[key]
     print("len(filtered_data)", len(filtered_data))
     response = jsonify(filtered_data)
     response.headers.add('Access-Control-Allow-Origin', '*')

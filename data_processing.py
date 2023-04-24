@@ -107,23 +107,28 @@ def process_data(turnstile_file_path, station_file_path):
 
     # Write data to a JSON file with a Key ID
     results = {}
-    for i, row in enumerate(filtered_df.collect()):
-        key = f"key{i}"
+    for row in filtered_df.collect():
+        key = f"{row['station']}_{row['linename']}_{row['division']}"
         row_obj = {
-            "station": row["station"],
-            "center": {
-                "lat": row["latitude"],
-                "lng": row["longitude"]
-            },
-            "linename": row["linename"],
-            "division": row["division"],
-            "enter": row["enter"],
-            "exit": row["exit"],
-            "total": row["total"],
-            "date": row["date"],
-            "time": row["time"]
+            key: {
+                "station": row["station"],
+                "center": {
+                    "lat": row["latitude"],
+                    "lng": row["longitude"]
+                },
+                "linename": row["linename"],
+                "division": row["division"],
+                "enter": row["enter"],
+                "exit": row["exit"],
+                "total": row["total"],
+                "date": row["date"],
+                "time": row["time"]
+            }
         }
-        results[key] = row_obj
+        if key in results:
+            results[key].append(row_obj)
+        else:
+            results[key] = [row_obj]
 
     with open("data.json", "w") as f:
         json.dump(results, f)
@@ -144,26 +149,30 @@ def process_data(turnstile_file_path, station_file_path):
     # )
     # test_df2.show()
 
-    # stations_list = ranked_df.toJSON().map(lambda j: json.loads(j)).collect()
     top10 = {}
-    for i, row in enumerate(ranked_df.collect()):
-        key = f"key{i}"
+    for row in ranked_df.collect():
+        key = f"{row['station']}_{row['linename']}_{row['division']}"
         row_obj = {
-            "station": row["station"],
-            "center": {
-                "lat": row["latitude"],
-                "lng": row["longitude"]
-            },
-            "linename": row["linename"],
-            "division": row["division"],
-            "enter": row["enter"],
-            "exit": row["exit"],
-            "total": row["total"],
-            "date": row["date"],
-            "time": row["time"],
-            "rank": row["rank"]
+            key: {
+                "station": row["station"],
+                "center": {
+                    "lat": row["latitude"],
+                    "lng": row["longitude"]
+                },
+                "linename": row["linename"],
+                "division": row["division"],
+                "enter": row["enter"],
+                "exit": row["exit"],
+                "total": row["total"],
+                "date": row["date"],
+                "time": row["time"],
+                "rank": row["rank"]
+            }
         }
-        top10[key] = row_obj
+        if key in top10:
+            top10[key].append(row_obj)
+        else:
+            top10[key] = [row_obj]
 
     with open("top10_stations.json", "w") as f:
         json.dump(top10, f)
@@ -173,7 +182,7 @@ def process_data(turnstile_file_path, station_file_path):
     '''
     total_by_date = filtered_df.groupBy("date").agg(sum("total").alias("total_by_date")).orderBy("date")
     # total_by_date.show()
-    total_by_date.write.format("csv").option("header", "true").mode("overwrite").save("total_by_date.csv")
+    # total_by_date.write.format("csv").option("header", "true").mode("overwrite").save("total_by_date.csv")
 
 
     '''
@@ -181,4 +190,4 @@ def process_data(turnstile_file_path, station_file_path):
     '''
     total_by_datetime = filtered_df.groupBy("date", "time").agg(sum("total").alias("total_by_date_time")).orderBy("date", "time")
     # total_by_datetime.show()
-    total_by_datetime.write.format("csv").option("header", "true").mode("overwrite").save("total_by_datetime.csv")
+    # total_by_datetime.write.format("csv").option("header", "true").mode("overwrite").save("total_by_datetime.csv")
